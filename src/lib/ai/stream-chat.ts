@@ -2,15 +2,19 @@ export type StreamMsg = { role: "user" | "assistant"; content: string };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
+export type ChatMode = "default" | "quality";
+
 export async function streamChat({
   messages,
   accessToken,
+  mode = "default",
   onDelta,
   onDone,
   signal,
 }: {
   messages: StreamMsg[];
   accessToken: string;
+  mode?: ChatMode;
   onDelta: (deltaText: string) => void;
   onDone: () => void;
   signal?: AbortSignal;
@@ -21,7 +25,7 @@ export async function streamChat({
       "Content-Type": "application/json",
       Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, mode }),
     signal,
   });
 
