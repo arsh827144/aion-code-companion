@@ -42,7 +42,9 @@ serve(async (req) => {
       return json(401, { error: "Unauthorized" });
     }
 
-    const payload = await req.json().catch(() => null) as { messages?: ClientMsg[] } | null;
+    const payload = await req.json().catch(() => null) as
+      | { messages?: ClientMsg[]; mode?: "default" | "quality" }
+      | null;
     const messages = payload?.messages;
     if (!Array.isArray(messages) || messages.length === 0) {
       return json(400, { error: "Invalid payload" });
@@ -55,7 +57,9 @@ serve(async (req) => {
     }
 
     const systemPrompt =
-      "Aap AION GPT ho — duniya ke ek coding expert assistant. Aap HINDI me jawab doge, lekin commands/code ENGLISH me exactly. Termux-focused step-by-step guidance do. Format: (1) Short summary (2) Steps (3) Commands/Code blocks (4) Verification (5) Common errors & fixes. Unsafe/illegal help deny karo.";
+      "Aap AION GPT ho — duniya ke ek coding expert assistant. Aap HINDI me jawab doge, lekin commands/code ENGLISH me exactly. Termux-focused step-by-step guidance do. Format: (1) Short summary (2) Steps (3) Commands/Code blocks (4) Verification (5) Common errors & fixes. Unsafe/illegal help deny karo. IMPORTANT: Agar output bahut lamba ho aur aapko lagta hai ki stream cut ho sakta hai, to last line me exactly [[AION_CONTINUE]] likho. Continue karte waqt pehle ka text repeat mat karo.";
+
+    const model = payload?.mode === "quality" ? "google/gemini-3-pro-preview" : "google/gemini-3-flash-preview";
 
     console.log("chat: streaming request", { msgCount: messages.length, userId: claimsData.claims.sub });
 
@@ -66,7 +70,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model,
         messages: [{ role: "system", content: systemPrompt }, ...messages],
         stream: true,
       }),

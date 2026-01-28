@@ -7,11 +7,13 @@ import { Loader2, Send, Square } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { MarkdownMessage } from "@/components/app/MarkdownMessage";
 import { TermuxPresets, type Preset } from "@/components/app/TermuxPresets";
-import { streamChat, type StreamMsg } from "@/lib/ai/stream-chat";
+import { streamChat, type ChatMode, type StreamMsg } from "@/lib/ai/stream-chat";
 import type { ChatMessage, Conversation } from "@/lib/chat/types";
 import { upsertConversation } from "@/lib/chat/storage";
 import { useAuthSession } from "@/lib/auth/useAuthSession";
 import { useNavigate } from "react-router-dom";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 function uid() {
   return crypto.randomUUID();
@@ -38,6 +40,7 @@ export default function ChatPage() {
 
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [longMode, setLongMode] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -84,6 +87,18 @@ export default function ChatPage() {
     setIsStreaming(false);
   };
 
+  const CONTINUE_TOKEN = "[[AION_CONTINUE]]";
+
+  const shouldAutoContinue = (text: string) => {
+    const trimmed = text.trimEnd();
+    if (!trimmed) return false;
+    if (trimmed.endsWith(CONTINUE_TOKEN)) return true;
+    // If a code fence is left open, it's usually a sign the model got cut mid-output.
+    const fenceCount = (trimmed.match(/```/g) ?? []).length;
+    if (fenceCount % 2 === 1) return true;
+    return false;
+  };
+
   const send = async (text: string) => {
     if (!session?.access_token) {
       toast({ title: "Login required", description: "Pehle login karein." });
@@ -111,19 +126,53 @@ export default function ChatPage() {
 
     let assistantSoFar = "";
     try {
+      const mode: ChatMode = "quality";
+
+      // First pass
       await streamChat({
         messages: [...streamMessages, { role: "user", content: messageText }],
         accessToken: session.access_token,
+        mode,
         onDelta: (chunk) => {
           assistantSoFar += chunk;
           updateLastAssistant(assistantSoFar);
         },
-        onDone: () => {
-          setIsStreaming(false);
-          abortRef.current = null;
-        },
+        onDone: () => {},
         signal: controller.signal,
       });
+
+      // Auto-continue pass(es) for very long outputs, while keeping a single assistant bubble.
+      // We only continue when the model signals it (or looks cut mid-code).
+      if (longMode) {
+        let turns = 0;
+        while (!controller.signal.aborted && shouldAutoContinue(assistantSoFar) && turns < 8) {
+          turns += 1;
+          // Remove the token if present, so it doesn't pollute the final output.
+          assistantSoFar = assistantSoFar.replace(new RegExp(`${CONTINUE_TOKEN}\\s*$`), "").trimEnd();
+          updateLastAssistant(assistantSoFar + "\n\n");
+
+          const continuePrompt =
+            "Continue EXACTLY from where you stopped. Do not repeat any earlier text. " +
+            "If output may still be cut, end with " +
+            CONTINUE_TOKEN +
+            " on the final line.";
+
+          await streamChat({
+            messages: [...streamMessages, { role: "user", content: messageText }, { role: "assistant", content: assistantSoFar }, { role: "user", content: continuePrompt }],
+            accessToken: session.access_token,
+            mode,
+            onDelta: (chunk) => {
+              assistantSoFar += chunk;
+              updateLastAssistant(assistantSoFar);
+            },
+            onDone: () => {},
+            signal: controller.signal,
+          });
+        }
+      }
+
+      setIsStreaming(false);
+      abortRef.current = null;
     } catch (e: any) {
       setIsStreaming(false);
       abortRef.current = null;
@@ -191,7 +240,20 @@ export default function ChatPage() {
                 className="min-h-[110px]"
               />
               <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-muted-foreground">Hindi answers • Commands/code English</div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="text-xs text-muted-foreground">Hindi answers • Commands/code English</div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="long-mode"
+                      checked={longMode}
+                      onCheckedChange={(v) => setLongMode(Boolean(v))}
+                      disabled={isStreaming}
+                    />
+                    <Label htmlFor="long-mode" className="text-xs text-muted-foreground">
+                      Long output (auto-continue)
+                    </Label>
+                  </div>
+                </div>
                 <div className="flex items-center gap-2">
                   {isStreaming ? (
                     <Button variant="secondary" onClick={stop}>
