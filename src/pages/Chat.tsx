@@ -10,6 +10,8 @@ import { TermuxPresets, type Preset } from "@/components/app/TermuxPresets";
 import { streamChat, type StreamMsg } from "@/lib/ai/stream-chat";
 import type { ChatMessage, Conversation } from "@/lib/chat/types";
 import { upsertConversation } from "@/lib/chat/storage";
+import { useAuthSession } from "@/lib/auth/useAuthSession";
+import { useNavigate } from "react-router-dom";
 
 function uid() {
   return crypto.randomUUID();
@@ -21,6 +23,8 @@ function suggestTitle(firstUserText: string) {
 }
 
 export default function ChatPage() {
+  const navigate = useNavigate();
+  const { session, isLoading } = useAuthSession();
   const [conversation, setConversation] = useState<Conversation>(() => {
     const id = uid();
     return {
@@ -40,6 +44,12 @@ export default function ChatPage() {
   useEffect(() => {
     upsertConversation(conversation);
   }, [conversation]);
+
+  useEffect(() => {
+    if (!isLoading && !session) {
+      navigate("/auth", { replace: true });
+    }
+  }, [isLoading, session, navigate]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -75,6 +85,11 @@ export default function ChatPage() {
   };
 
   const send = async (text: string) => {
+    if (!session?.access_token) {
+      toast({ title: "Login required", description: "Pehle login karein." });
+      navigate("/auth");
+      return;
+    }
     const messageText = text.trim();
     if (!messageText) return;
     if (messageText.length > 4000) {
@@ -98,6 +113,7 @@ export default function ChatPage() {
     try {
       await streamChat({
         messages: [...streamMessages, { role: "user", content: messageText }],
+        accessToken: session.access_token,
         onDelta: (chunk) => {
           assistantSoFar += chunk;
           updateLastAssistant(assistantSoFar);

@@ -9,6 +9,7 @@ import WizardPage from "./pages/Wizard";
 import HistoryPage from "./pages/History";
 import SettingsPage from "./pages/Settings";
 import { AppHeader } from "@/components/app/AppHeader";
+import AuthPage from "./pages/Auth";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +22,7 @@ const App = () => (
         <AppHeader />
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/auth" element={<AuthPage />} />
           <Route path="/wizard" element={<WizardPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
